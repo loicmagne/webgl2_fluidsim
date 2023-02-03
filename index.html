@@ -7,7 +7,41 @@
     <title>webgl2 fluid simulation</title>
   </head>
   <body>
-    <canvas id="fluidsim_canvas" width="1024" height="1024" style="background-color: black;" ></canvas>
+    <form style="display: flex; flex-direction: column;" id="param_form">
+      <div>
+        <label for="viscosity">viscosity</label>
+        <input type="range" min="0.001" max="0.01" step="0.001" value="0.001" class="slider" id="viscosity">
+      </div>
+      <div>
+        <label for="radius">radius</label>
+        <input type="range" min="0.0005" max="0.005" step="0.0001" value="0.001" class="slider" id="radius">
+      </div>
+      <div>
+        <label for="velocity_dissipation">velocity dissipation</label>
+        <input type="range" min="0." max="0.1" step="0.01" value="0." class="slider" id="velocity_dissipation">
+      </div>
+      <div>
+        <label for="density_dissipation">density dissipation</label>
+        <input type="range" min="0." max="0.1" step="0.01" value="0." class="slider" id="density_dissipation">
+      </div>
+      <fieldset style="border: 0; display: flex;" id="display_radio">
+        <div>
+          <input type="radio" id="dye" name="display" value="dye" checked>
+          <label for="dye">dye</label>
+        </div>
+    
+        <div>
+          <input type="radio" id="velocity" name="display" value="velocity">
+          <label for="velocity">velocity</label>
+        </div>
+    
+        <div>
+          <input type="radio" id="pressure" name="display" value="pressure">
+          <label for="pressure">pressure</label>
+        </div>
+      </fieldset>
+    </form>
+    <canvas id="fluidsim_canvas" width="512" height="512" style="background-color: black;" ></canvas>
     <script src="script.js"></script>
   </body>
 </html>

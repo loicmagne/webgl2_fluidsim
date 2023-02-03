@@ -21,8 +21,6 @@ TODO:
 
 const POSITION_LOCATION = 0;
 
-const NU = 1000.;
-
 const sim_width = 512; 
 const sim_height = 512;
 
@@ -32,6 +30,14 @@ const sim_dy = 1 / sim_height;
 const inner_vao = gl.createVertexArray();
 const boundary_vao = gl.createVertexArray();
 const full_vao = gl.createVertexArray();
+
+let config = {
+  NU: 0.0001,
+  DISPLAY: 'dye',
+  RADIUS: 0.1,
+  VELOCITY_DISSIPATION: 0.99,
+  DYE_DISSIPATION: 0.99,
+}
 
 /*
 
@@ -52,11 +58,11 @@ function setup_geometry(vao, position_data, size, type, normalized, stride, offs
 setup_geometry(
   inner_vao,
   new Float32Array([
-    -1 + sim_dx, -1 + sim_dy,
+    -1 + 2. * sim_dx, -1 + 2. * sim_dy,
     1 - sim_dx, 1 - sim_dy,
-    1 - sim_dx, -1 + sim_dy,
-    -1 + sim_dx, -1 + sim_dy,
-    -1 + sim_dx, 1 - sim_dy,
+    1 - sim_dx, -1 + 2. * sim_dy,
+    -1 + 2. * sim_dx, -1 + 2. * sim_dy,
+    -1 + 2. * sim_dx, 1 - sim_dy,
     1 - sim_dx, 1 - sim_dy,
   ]),
   2, gl.FLOAT, false, 0, 0
@@ -137,7 +143,7 @@ void main() {
   vec2 size_x = vec2(textureSize(u_x, 0));
   vec2 normalized_pos = gl_FragCoord.xy / size_x;
   vec2 prev = normalized_pos - u_dt * bilerp(u_v, normalized_pos, size_v).xy;
-  res = 0.995 * bilerp(u_x, prev, size_x);
+  res = 0.9995 * bilerp(u_x, prev, size_x);
 }`
 
 const add_fs = `#version 300 es
@@ -265,9 +271,12 @@ void main() {
   int border_r = 1 - min(size.x - 1 - pos.x, 1);
   int border_b = 1 - min(pos.y, 1);
   int border_t = 1 - min(size.y - 1 - pos.y, 1);
-  ivec2 direction = ivec2(border_l - border_r, border_b - border_t); 
+  int border = min(border_l + border_r + border_b + border_t, 1);
 
-  res = u_alpha * texelFetch(u_x, pos + direction, 0);
+  float coef = (border > 0) ? u_alpha : 1.0; 
+  ivec2 direction = ivec2(border_l - border_r, border_b - border_t); 
+ 
+  res = coef  * texelFetch(u_x, pos + direction, 0);
 }`;
 
 const display_fs = `#version 300 es
@@ -433,31 +442,34 @@ function render(fbo, vao, geometry, count, clear = false) {
   gl.drawArrays(geometry, 0, count);
 }
 
-function render_screen() {
+function render_screen(fbo) {
   // debug
 
   gl.useProgram(display_program.program);
 
   gl.uniform1i(display_program.uniforms.u_x, 0);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
+  gl.bindTexture(gl.TEXTURE_2D, fbo.tex);
 
   render(screen, full_vao, gl.TRIANGLES, 6, true);
 }
 
-function step_sim(dt) {
-
-  // Boundary velocity condition
+function set_boundary(fbo_pair, alpha) {
   gl.useProgram(boundary_program.program);
 
   gl.uniform1i(boundary_program.uniforms.u_x, 0);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+  gl.bindTexture(gl.TEXTURE_2D, fbo_pair.read.tex);
 
-  gl.uniform1f(boundary_program.uniforms.u_alpha, -1);
+  gl.uniform1f(boundary_program.uniforms.u_alpha, alpha);
 
-  render(velocity.write, full_vao, gl.TRIANGLES, 6);
-  velocity.swap();
+  render(fbo_pair.write, full_vao, gl.TRIANGLES, 6);
+  fbo_pair.swap();
+}
+
+function step_sim(dt) {
+
+  // set_boundary(velocity, -1);
 
   // Advect velocity
   gl.useProgram(advection_program.program);
@@ -472,17 +484,7 @@ function step_sim(dt) {
   render(velocity.write, inner_vao, gl.TRIANGLES, 6);
   velocity.swap();
 
-  // Boundary dye condition
-  gl.useProgram(boundary_program.program);
-
-  gl.uniform1i(boundary_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
-
-  gl.uniform1f(boundary_program.uniforms.u_alpha, 0.);
-
-  render(dye.write, full_vao, gl.TRIANGLES, 6);
-  dye.swap();
+  // set_boundary(dye, 0.);
 
   // Advect dye 
   gl.useProgram(advection_program.program);
@@ -497,13 +499,13 @@ function step_sim(dt) {
 
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
 
-  render(dye.write, full_vao, gl.TRIANGLES, 6);
+  render(dye.write, inner_vao, gl.TRIANGLES, 6);
   dye.swap();
 
   // Diffuse velocity
   gl.useProgram(jacobi_diffusion_program.program);
 
-  gl.uniform1f(jacobi_diffusion_program.uniforms.u_nu, NU);
+  gl.uniform1f(jacobi_diffusion_program.uniforms.u_nu, config.NU);
   gl.uniform1f(jacobi_diffusion_program.uniforms.u_dt, dt);
 
   for (let i = 0; i < 40; i++) {
@@ -527,24 +529,14 @@ function step_sim(dt) {
   // Clear pressure
   gl.useProgram(clear_program.program);
 
-  gl.uniform4f(clear_program.uniforms.u_color, 1.0, 0.0, 0.0, 0.0);
+  gl.uniform4f(clear_program.uniforms.u_color, 1.0, 1.0, 1.0, 1.0);
   render(pressure.write, inner_vao, gl.TRIANGLES, 6);
   pressure.swap();
 
   
   // Solve for pressure
   for (let i = 0; i < 40; i++) {
-    // Boundary pressure condition
-    gl.useProgram(boundary_program.program);
-
-    gl.uniform1i(boundary_program.uniforms.u_x, 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
-
-    gl.uniform1f(boundary_program.uniforms.u_alpha, 1.);
-
-    render(pressure.write, full_vao, gl.TRIANGLES, 6);
-    pressure.swap();
+    // set_boundary(pressure, 1.);
 
     // Jacobi iteration
     gl.useProgram(jacobi_projection_program.program);
@@ -560,17 +552,7 @@ function step_sim(dt) {
     pressure.swap();
   }
 
-  // Boundary velocity condition
-  gl.useProgram(boundary_program.program);
-
-  gl.uniform1i(boundary_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-
-  gl.uniform1f(boundary_program.uniforms.u_alpha, -1);
-
-  render(velocity.write, full_vao, gl.TRIANGLES, 6);
-  velocity.swap();
+  // set_boundary(velocity, -1);
 
   // Compute pressure gradient
   gl.useProgram(grad_program.program);
@@ -605,7 +587,11 @@ function loop(t) {
   
   step_user();
   step_sim(dt);
-  render_screen();
+  render_screen(
+    config.DISPLAY == 'velocity' ? velocity.read :
+    config.DISPLAY == 'pressure' ? pressure.read :
+    dye.read
+  );
 
   requestAnimationFrame(loop);
 }
@@ -623,8 +609,8 @@ const pointers = [];
 function serialize_pointer(pointer) {
   return {
     id: pointer.pointerId,
-    x: pointer.clientX / gl.canvas.width,
-    y: 1. - pointer.clientY / gl.canvas.height,
+    x: pointer.offsetX / gl.canvas.width,
+    y: 1. - pointer.offsetY / gl.canvas.height,
     dx: 0,
     dy: 0,
     color: [Math.random(), Math.random(), Math.random()]
@@ -670,7 +656,7 @@ function step_user() {
 
     gl.uniform2f(splat_program.uniforms.u_point, p.x, p.y);
     gl.uniform3f(splat_program.uniforms.u_value, 10* p.dx, 10*p.dy, 0);
-    gl.uniform1f(splat_program.uniforms.u_radius, 0.005);
+    gl.uniform1f(splat_program.uniforms.u_radius, config.RADIUS);
 
     render(velocity.write, inner_vao, gl.TRIANGLES, 6);
     velocity.swap();
@@ -685,3 +671,35 @@ function step_user() {
     dye.swap();
   });
 }
+
+
+
+/*
+
+UI
+
+*/
+
+const viscosity_slider = document.querySelector('#viscosity');
+const radius_slider = document.querySelector('#radius');
+const velocity_dissipation_slider = document.querySelector('#velocity_dissipation');
+const density_dissipation_slider = document.querySelector('#density_dissipation');
+
+config.NU = viscosity_slider.value;
+config.RADIUS = radius_slider.value;
+config.VELOCITY_DISSIPATION = velocity_dissipation_slider.value;
+config.DYE_DISSIPATION = density_dissipation_slider.value;
+
+viscosity_slider.addEventListener('input', (e) => {
+  config.NU = e.target.value;
+});
+
+radius_slider.addEventListener('input', (e) => {
+  config.RADIUS = e.target.value;
+});
+
+const display_radio = document.querySelector('#display_radio');
+
+display_radio.addEventListener('input', (e) => {
+  config.DISPLAY = e.target.value;
+});
