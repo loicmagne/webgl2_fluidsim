@@ -32,7 +32,8 @@ const boundary_vao = gl.createVertexArray();
 const full_vao = gl.createVertexArray();
 
 let config = {
-  NU: 0.0001,
+  NU: 0.01,
+  PRESSURE: 0.5,
   DISPLAY: 'dye',
   RADIUS: 0.1,
   VELOCITY_DISSIPATION: 0.99,
@@ -163,12 +164,14 @@ void main() {
 const clear_fs = `#version 300 es
 precision highp float;
 
-uniform vec4 u_color;
+uniform sampler2D u_x;
+uniform float u_alpha;
 
 out vec4 res;
 
 void main() {
-  res = u_color;
+  ivec2 pos = ivec2(gl_FragCoord.xy); 
+  res = u_alpha * texelFetch(u_x, pos, 0);
 }`;
 
 const jacobi_diffusion_fs = `#version 300 es
@@ -530,14 +533,17 @@ function step_sim(dt) {
 
   render(tmp_1f, inner_vao, gl.TRIANGLES, 6);
 
-  /*
   // Clear pressure
   gl.useProgram(clear_program.program);
 
-  gl.uniform4f(clear_program.uniforms.u_color, 1.0, 1.0, 1.0, 1.0);
-  render(pressure.write, inner_vao, gl.TRIANGLES, 6);
+  gl.uniform1i(clear_program.uniforms.u_x, 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
+
+  gl.uniform1f(clear_program.uniforms.u_alpha, config.PRESSURE);
+
+  render(pressure.write, full_vao, gl.TRIANGLES, 6);
   pressure.swap();
-  */
   
   // Solve for pressure
   for (let i = 0; i < 60; i++) {
@@ -686,7 +692,7 @@ UI
 */
 
 
-const viscosity_slider = document.querySelector('#viscosity');
+const pressure_slider = document.querySelector('#pressure');
 const radius_slider = document.querySelector('#radius');
 const velocity_dissipation_slider = document.querySelector('#velocity_dissipation');
 const density_dissipation_slider = document.querySelector('#density_dissipation');
@@ -697,16 +703,15 @@ function log_scale(value, a, b) {
   return a * Math.pow(b/a, value);
 }
 
-const viscosity_transform = value => log_scale(value, 0.0001, 1.);
 const velocity_dissipation_transform = value => 1. - log_scale(value, 0.0001, 0.1);
 const density_dissipation_transform = value => 1. - log_scale(value, 0.0001, 0.1);
 
-config.NU = viscosity_transform(viscosity_slider.value);
+config.PRESSURE = pressure_slider.value;
 config.RADIUS = radius_slider.value;
 config.VELOCITY_DISSIPATION = velocity_dissipation_transform(velocity_dissipation_slider.value);
 config.DYE_DISSIPATION = density_dissipation_transform(density_dissipation_slider.value);
 
-viscosity_slider.addEventListener('input', e => {config.NU = viscosity_transform(e.target.value);});
+pressure_slider.addEventListener('input', e => {config.PRESSURE = e.target.value;});
 radius_slider.addEventListener('input', (e) => {config.RADIUS = e.target.value;});
 velocity_dissipation_slider.addEventListener('input', e => {config.VELOCITY_DISSIPATION = velocity_dissipation_transform(e.target.value);});
 density_dissipation_slider.addEventListener('input', e => {config.DYE_DISSIPATION = density_dissipation_transform(e.target.value);});
