@@ -21,8 +21,8 @@ TODO:
 
 const POSITION_LOCATION = 0;
 
-const sim_width = 512; 
-const sim_height = 512;
+const sim_width = 256;
+const sim_height = 256;
 
 const sim_dx = 1 / sim_width;
 const sim_dy = 1 / sim_height;
@@ -122,7 +122,7 @@ in vec2 v_position;
 uniform sampler2D u_v;
 uniform sampler2D u_x;
 uniform float u_dt;
-
+uniform float u_dissipation;
 out vec4 res;
 
 vec4 bilerp(sampler2D tex, vec2 x_norm, vec2 size) {
@@ -142,8 +142,8 @@ void main() {
   vec2 size_v = vec2(textureSize(u_v, 0));
   vec2 size_x = vec2(textureSize(u_x, 0));
   vec2 normalized_pos = gl_FragCoord.xy / size_x;
-  vec2 prev = normalized_pos - u_dt * bilerp(u_v, normalized_pos, size_v).xy;
-  res = 0.9995 * bilerp(u_x, prev, size_x);
+  vec2 prev = normalized_pos - u_dt * 2. * bilerp(u_v, normalized_pos, size_v).xy;
+  res = u_dissipation * bilerp(u_x, prev, size_x);
 }`
 
 const add_fs = `#version 300 es
@@ -415,7 +415,8 @@ function create_fbo_pair(w, h, internal_format, format, type, filter) {
 const velocity = create_fbo_pair(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 const pressure = create_fbo_pair(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
 const dye = create_fbo_pair(512, 512, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
-const tmp = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
+const tmp_1f = create_fbo(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+const tmp_2f = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 
 const screen = {
   tex: null,
@@ -469,7 +470,7 @@ function set_boundary(fbo_pair, alpha) {
 
 function step_sim(dt) {
 
-  // set_boundary(velocity, -1);
+  set_boundary(velocity, -1);
 
   // Advect velocity
   gl.useProgram(advection_program.program);
@@ -480,11 +481,12 @@ function step_sim(dt) {
   gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
 
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
+  gl.uniform1f(advection_program.uniforms.u_dissipation, config.VELOCITY_DISSIPATION);
 
   render(velocity.write, inner_vao, gl.TRIANGLES, 6);
   velocity.swap();
 
-  // set_boundary(dye, 0.);
+  set_boundary(dye, 0.);
 
   // Advect dye 
   gl.useProgram(advection_program.program);
@@ -498,6 +500,7 @@ function step_sim(dt) {
   gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
 
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
+  gl.uniform1f(advection_program.uniforms.u_dissipation, config.DYE_DISSIPATION);
 
   render(dye.write, inner_vao, gl.TRIANGLES, 6);
   dye.swap();
@@ -508,7 +511,7 @@ function step_sim(dt) {
   gl.uniform1f(jacobi_diffusion_program.uniforms.u_nu, config.NU);
   gl.uniform1f(jacobi_diffusion_program.uniforms.u_dt, dt);
 
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 20; i++) {
     gl.uniform1i(jacobi_diffusion_program.uniforms.u_x, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
@@ -517,6 +520,7 @@ function step_sim(dt) {
   }
 
   // Project velocity
+  set_boundary(velocity, -1);
   // Compute divergence
   gl.useProgram(div_program.program);
 
@@ -524,26 +528,27 @@ function step_sim(dt) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
 
-  render(tmp, inner_vao, gl.TRIANGLES, 6);
+  render(tmp_1f, inner_vao, gl.TRIANGLES, 6);
 
+  /*
   // Clear pressure
   gl.useProgram(clear_program.program);
 
   gl.uniform4f(clear_program.uniforms.u_color, 1.0, 1.0, 1.0, 1.0);
   render(pressure.write, inner_vao, gl.TRIANGLES, 6);
   pressure.swap();
-
+  */
   
   // Solve for pressure
-  for (let i = 0; i < 40; i++) {
-    // set_boundary(pressure, 1.);
+  for (let i = 0; i < 60; i++) {
+    set_boundary(pressure, 1.);
 
     // Jacobi iteration
     gl.useProgram(jacobi_projection_program.program);
 
     gl.uniform1i(jacobi_projection_program.uniforms.u_div_v, 0);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tmp.tex);
+    gl.bindTexture(gl.TEXTURE_2D, tmp_1f.tex);
     
     gl.uniform1i(jacobi_projection_program.uniforms.u_x, 1);
     gl.activeTexture(gl.TEXTURE1);
@@ -552,7 +557,7 @@ function step_sim(dt) {
     pressure.swap();
   }
 
-  // set_boundary(velocity, -1);
+  set_boundary(velocity, -1);
 
   // Compute pressure gradient
   gl.useProgram(grad_program.program);
@@ -561,7 +566,7 @@ function step_sim(dt) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
 
-  render(tmp, inner_vao, gl.TRIANGLES, 6);
+  render(tmp_2f, inner_vao, gl.TRIANGLES, 6);
 
   // Subtract pressure gradient from velocity
   gl.useProgram(add_program.program);
@@ -572,7 +577,7 @@ function step_sim(dt) {
 
   gl.uniform1i(add_program.uniforms.u_v, 1);
   gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, tmp.tex);
+  gl.bindTexture(gl.TEXTURE_2D, tmp_2f.tex);
 
   gl.uniform1f(add_program.uniforms.u_alpha, -1.);
 
@@ -680,26 +685,29 @@ UI
 
 */
 
+
 const viscosity_slider = document.querySelector('#viscosity');
 const radius_slider = document.querySelector('#radius');
 const velocity_dissipation_slider = document.querySelector('#velocity_dissipation');
 const density_dissipation_slider = document.querySelector('#density_dissipation');
-
-config.NU = viscosity_slider.value;
-config.RADIUS = radius_slider.value;
-config.VELOCITY_DISSIPATION = velocity_dissipation_slider.value;
-config.DYE_DISSIPATION = density_dissipation_slider.value;
-
-viscosity_slider.addEventListener('input', (e) => {
-  config.NU = e.target.value;
-});
-
-radius_slider.addEventListener('input', (e) => {
-  config.RADIUS = e.target.value;
-});
-
 const display_radio = document.querySelector('#display_radio');
 
-display_radio.addEventListener('input', (e) => {
-  config.DISPLAY = e.target.value;
-});
+// Transform a 0-1 slider value to an a-b log scale
+function log_scale(value, a, b) {
+  return a * Math.pow(b/a, value);
+}
+
+const viscosity_transform = value => log_scale(value, 0.0001, 1.);
+const velocity_dissipation_transform = value => 1. - log_scale(value, 0.0001, 0.1);
+const density_dissipation_transform = value => 1. - log_scale(value, 0.0001, 0.1);
+
+config.NU = viscosity_transform(viscosity_slider.value);
+config.RADIUS = radius_slider.value;
+config.VELOCITY_DISSIPATION = velocity_dissipation_transform(velocity_dissipation_slider.value);
+config.DYE_DISSIPATION = density_dissipation_transform(density_dissipation_slider.value);
+
+viscosity_slider.addEventListener('input', e => {config.NU = viscosity_transform(e.target.value);});
+radius_slider.addEventListener('input', (e) => {config.RADIUS = e.target.value;});
+velocity_dissipation_slider.addEventListener('input', e => {config.VELOCITY_DISSIPATION = velocity_dissipation_transform(e.target.value);});
+density_dissipation_slider.addEventListener('input', e => {config.DYE_DISSIPATION = density_dissipation_transform(e.target.value);});
+display_radio.addEventListener('input', (e) => {config.DISPLAY = e.target.value;});

@@ -10,7 +10,7 @@
     <form style="display: flex; flex-direction: column;" id="param_form">
       <div>
         <label for="viscosity">viscosity</label>
-        <input type="range" min="0.001" max="0.01" step="0.001" value="0.001" class="slider" id="viscosity">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.0" class="slider" id="viscosity">
       </div>
       <div>
         <label for="radius">radius</label>
@@ -18,11 +18,11 @@
       </div>
       <div>
         <label for="velocity_dissipation">velocity dissipation</label>
-        <input type="range" min="0." max="0.1" step="0.01" value="0." class="slider" id="velocity_dissipation">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.0" class="slider" id="velocity_dissipation">
       </div>
       <div>
         <label for="density_dissipation">density dissipation</label>
-        <input type="range" min="0." max="0.1" step="0.01" value="0." class="slider" id="density_dissipation">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.0" class="slider" id="density_dissipation">
       </div>
       <fieldset style="border: 0; display: flex;" id="display_radio">
         <div>
@@ -41,7 +41,7 @@
         </div>
       </fieldset>
     </form>
-    <canvas id="fluidsim_canvas" width="512" height="512" style="background-color: black;" ></canvas>
+    <canvas id="fluidsim_canvas" width="1024" height="1024" style="background-color: black;" ></canvas>
     <script src="script.js"></script>
   </body>
 </html>
