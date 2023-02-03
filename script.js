@@ -65,14 +65,14 @@ setup_geometry(
 setup_geometry(
   boundary_vao,
   new Float32Array([
-    -1, -1,
-    1, -1,
+    -1, -1 + sim_dy,
+    1, -1 + sim_dy,
     1, -1,
     1, 1,
     1, 1,
     -1, 1,
-    -1, 1,
-    -1, -1,
+    -1 + sim_dx, 1,
+    -1 + sim_dx, -1,
   ]),
   2, gl.FLOAT, false, 0, 0
 );
@@ -267,7 +267,7 @@ void main() {
   int border_t = 1 - min(size.y - 1 - pos.y, 1);
   ivec2 direction = ivec2(border_l - border_r, border_b - border_t); 
 
-  res = texture(u_x, v_position);
+  res = u_alpha * texelFetch(u_x, pos + direction, 0);
 }`;
 
 const display_fs = `#version 300 es
@@ -435,12 +435,7 @@ function render(fbo, vao, geometry, count, clear = false) {
 
 function render_screen() {
   // debug
-  /*
-  gl.useProgram(clear_program.program);
 
-  gl.uniform4f(clear_program.uniforms.u_color, 0.5, 0.5, 0.0, 0.5);
-  render(velocity.read, boundary_vao, gl.LINES, 8);
-  */
   gl.useProgram(display_program.program);
 
   gl.uniform1i(display_program.uniforms.u_x, 0);
@@ -461,7 +456,7 @@ function step_sim(dt) {
 
   gl.uniform1f(boundary_program.uniforms.u_alpha, -1);
 
-  render(velocity.write, boundary_vao, gl.LINES, 8);
+  render(velocity.write, full_vao, gl.TRIANGLES, 6);
   velocity.swap();
 
   // Advect velocity
@@ -474,7 +469,7 @@ function step_sim(dt) {
 
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
 
-  render(velocity.write, full_vao, gl.TRIANGLES, 6);
+  render(velocity.write, inner_vao, gl.TRIANGLES, 6);
   velocity.swap();
 
   // Boundary dye condition
@@ -486,7 +481,7 @@ function step_sim(dt) {
 
   gl.uniform1f(boundary_program.uniforms.u_alpha, 0.);
 
-  render(dye.write, boundary_vao, gl.LINES, 8);
+  render(dye.write, full_vao, gl.TRIANGLES, 6);
   dye.swap();
 
   // Advect dye 
@@ -548,7 +543,7 @@ function step_sim(dt) {
 
     gl.uniform1f(boundary_program.uniforms.u_alpha, 1.);
 
-    render(pressure.write, boundary_vao, gl.LINES, 8);
+    render(pressure.write, full_vao, gl.TRIANGLES, 6);
     pressure.swap();
 
     // Jacobi iteration
@@ -574,7 +569,7 @@ function step_sim(dt) {
 
   gl.uniform1f(boundary_program.uniforms.u_alpha, -1);
 
-  render(velocity.write, boundary_vao, gl.LINES, 8);
+  render(velocity.write, full_vao, gl.TRIANGLES, 6);
   velocity.swap();
 
   // Compute pressure gradient
