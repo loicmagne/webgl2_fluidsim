@@ -59,11 +59,11 @@ function setup_geometry(vao, position_data, size, type, normalized, stride, offs
 setup_geometry(
   inner_vao,
   new Float32Array([
-    -1 + 2. * sim_dx, -1 + 2. * sim_dy,
+    -1 + sim_dx, -1 + sim_dy,
     1 - sim_dx, 1 - sim_dy,
-    1 - sim_dx, -1 + 2. * sim_dy,
-    -1 + 2. * sim_dx, -1 + 2. * sim_dy,
-    -1 + 2. * sim_dx, 1 - sim_dy,
+    1 - sim_dx, -1 + sim_dy,
+    -1 + sim_dx, -1 + sim_dy,
+    -1 + sim_dx, 1 - sim_dy,
     1 - sim_dx, 1 - sim_dy,
   ]),
   2, gl.FLOAT, false, 0, 0
@@ -127,7 +127,7 @@ uniform float u_dissipation;
 out vec4 res;
 
 vec4 bilerp(sampler2D tex, vec2 x_norm, vec2 size) {
-  vec2 x = x_norm * size - 0.5;
+  vec2 x = x_norm * size;
   vec2 fx = fract(x);
   ivec2 ix = ivec2(floor(x));
 
@@ -142,8 +142,8 @@ vec4 bilerp(sampler2D tex, vec2 x_norm, vec2 size) {
 void main() {
   vec2 size_v = vec2(textureSize(u_v, 0));
   vec2 size_x = vec2(textureSize(u_x, 0));
-  vec2 normalized_pos = gl_FragCoord.xy / size_x;
-  vec2 prev = normalized_pos - u_dt * 2. * bilerp(u_v, normalized_pos, size_v).xy;
+  vec2 normalized_pos = floor(gl_FragCoord.xy) / size_x;
+  vec2 prev = normalized_pos - u_dt * bilerp(u_v, normalized_pos, size_v).xy;
   res = u_dissipation * bilerp(u_x, prev, size_x);
 }`
 
@@ -269,15 +269,24 @@ out vec4 res;
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy);
   ivec2 size = textureSize(u_x, 0);
+  float coef = 1.;
+  ivec2 direction = ivec2(0, 0);
 
-  int border_l = 1 - min(pos.x, 1);
-  int border_r = 1 - min(size.x - 1 - pos.x, 1);
-  int border_b = 1 - min(pos.y, 1);
-  int border_t = 1 - min(size.y - 1 - pos.y, 1);
-  int border = min(border_l + border_r + border_b + border_t, 1);
+  if (pos.x == 0) {
+    coef = u_alpha;
+    direction.x = 1;
+  } else if (pos.x == size.x - 1) {
+    coef = u_alpha;
+    direction.x = -1;
+  }
 
-  float coef = (border > 0) ? u_alpha : 1.0; 
-  ivec2 direction = ivec2(border_l - border_r, border_b - border_t); 
+  if (pos.y == 0) {
+    coef = u_alpha;
+    direction.y = 1;
+  } else if (pos.y == size.y - 1) {
+    coef = u_alpha;
+    direction.y = -1;
+  }
  
   res = coef  * texelFetch(u_x, pos + direction, 0);
 }`;
@@ -417,7 +426,7 @@ function create_fbo_pair(w, h, internal_format, format, type, filter) {
 
 const velocity = create_fbo_pair(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 const pressure = create_fbo_pair(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
-const dye = create_fbo_pair(512, 512, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
+const dye = create_fbo_pair(256, 256, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
 const tmp_1f = create_fbo(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
 const tmp_2f = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 
@@ -473,7 +482,7 @@ function set_boundary(fbo_pair, alpha) {
 
 function step_sim(dt) {
 
-  set_boundary(velocity, -1);
+  set_boundary(velocity, -1.0);
 
   // Advect velocity
   gl.useProgram(advection_program.program);
@@ -508,6 +517,7 @@ function step_sim(dt) {
   render(dye.write, inner_vao, gl.TRIANGLES, 6);
   dye.swap();
 
+  set_boundary(velocity, -1.0);
   // Diffuse velocity
   gl.useProgram(jacobi_diffusion_program.program);
 
@@ -563,7 +573,8 @@ function step_sim(dt) {
     pressure.swap();
   }
 
-  set_boundary(velocity, -1);
+  set_boundary(velocity, -1.);
+  set_boundary(pressure, 1.);
 
   // Compute pressure gradient
   gl.useProgram(grad_program.program);
