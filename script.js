@@ -8,7 +8,7 @@ const gl = canvas.getContext('webgl2');
 const ext = gl.getExtension('EXT_color_buffer_float');
 
 let config = {
-  NU: 0.01,
+  NU: 1.,
   PRESSURE: 0.5,
   DISPLAY: 'dye',
   RADIUS: 0.1,
@@ -674,6 +674,7 @@ UI
 
 */
 
+const viscosity_slider = document.querySelector('#viscosity');
 const pressure_slider = document.querySelector('#pressure');
 const radius_slider = document.querySelector('#radius');
 const velocity_dissipation_slider = document.querySelector('#velocity_dissipation');
@@ -685,15 +686,18 @@ function log_scale(value, a, b) {
   return a * Math.pow(b/a, value);
 }
 
+const viscosity_transform = value => log_scale(value, 0.0001, 1000.);
 const radius_transform = value => log_scale(value, 0.0001, 0.01);
-const velocity_dissipation_transform = value => 1. - log_scale(value, 0.01, 0.1);
-const density_dissipation_transform = value => 1. - log_scale(value, 0.01, 0.1);
+const velocity_dissipation_transform = value => 1. - log_scale(value, 0.001, 0.1);
+const density_dissipation_transform = value => 1. - log_scale(value, 0.001, 0.1);
 
+config.NU = viscosity_transform(viscosity_slider.value);
 config.PRESSURE = pressure_slider.value;
 config.RADIUS = radius_transform(radius_slider.value);
 config.VELOCITY_DISSIPATION = velocity_dissipation_transform(velocity_dissipation_slider.value);
 config.DYE_DISSIPATION = density_dissipation_transform(density_dissipation_slider.value);
 
+viscosity_slider.addEventListener('input', e => {config.NU = viscosity_transform(e.target.value);});
 pressure_slider.addEventListener('input', e => {config.PRESSURE = e.target.value;});
 radius_slider.addEventListener('input', (e) => {config.RADIUS = radius_transform(e.target.value);});
 velocity_dissipation_slider.addEventListener('input', e => {config.VELOCITY_DISSIPATION = velocity_dissipation_transform(e.target.value);});

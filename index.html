@@ -44,6 +44,10 @@
   <body>
     <form id="param_form">
       <div>
+        <label for="pressure">viscosity</label>
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.25" class="slider" id="viscosity">
+      </div>
+      <div>
         <label for="pressure">pressure</label>
         <input type="range" min="0.0" max="1.0" step="0.001" value="0.25" class="slider" id="pressure">
       </div>
@@ -53,11 +57,11 @@
       </div>
       <div>
         <label for="velocity_dissipation">velocity dissipation</label>
-        <input type="range" min="0.0" max="1.0" step="0.001" value="0.1" class="slider" id="velocity_dissipation">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.25" class="slider" id="velocity_dissipation">
       </div>
       <div>
         <label for="density_dissipation">density dissipation</label>
-        <input type="range" min="0.0" max="1.0" step="0.001" value="0.1" class="slider" id="density_dissipation">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.5" class="slider" id="density_dissipation">
       </div>
       <fieldset id="display_radio">
         <div>
