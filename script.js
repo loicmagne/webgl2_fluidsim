@@ -268,15 +268,15 @@ out vec4 res;
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy);
   ivec2 size = textureSize(u_x, 0);
-  int border_l = 1 - min(pos.x, 1);
-  int border_r = 1 - min(size.x - 1 - pos.x, 1);
-  int border_b = 1 - min(pos.y, 1);
-  int border_t = 1 - min(size.y - 1 - pos.y, 1);
-  int border = min(border_l + border_r + border_b + border_t, 1);
+  int l = 1 - min(pos.x, 1);
+  int r = 1 - min(size.x - 1 - pos.x, 1);
+  int b = 1 - min(pos.y, 1);
+  int t = 1 - min(size.y - 1 - pos.y, 1);
+  int border = min(l + r + b + t, 1);
   float coef = (border > 0) ? u_alpha : 1.0; 
-  ivec2 direction = ivec2(border_l - border_r, border_b - border_t); 
+  ivec2 dir = ivec2(l - r, b - t);
  
-  res = coef  * texelFetch(u_x, pos + direction, 0);
+  res = coef  * texelFetch(u_x, pos + dir, 0);
 }`;
 
 const display_fs = `#version 300 es
