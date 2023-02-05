@@ -7,30 +7,6 @@ const gl = canvas.getContext('webgl2');
 
 const ext = gl.getExtension('EXT_color_buffer_float');
 
-/*
-TODO:
-- Create all geometries and put them in a VAO (1 rectangle and 4 lines)
-- Create all the textures to store the vector fields
-- Setup rendering to the textures
-- Create the shaders to update the vector fields
-- Make the step() function to update the vector fields
-- Handle dye
-- Handle user inputs
-- Draw to the screen
-*/
-
-const POSITION_LOCATION = 0;
-
-const sim_width = 256;
-const sim_height = 256;
-
-const sim_dx = 1 / sim_width;
-const sim_dy = 1 / sim_height;
-
-const inner_vao = gl.createVertexArray();
-const boundary_vao = gl.createVertexArray();
-const full_vao = gl.createVertexArray();
-
 let config = {
   NU: 0.01,
   PRESSURE: 0.5,
@@ -38,13 +14,57 @@ let config = {
   RADIUS: 0.1,
   VELOCITY_DISSIPATION: 0.99,
   DYE_DISSIPATION: 0.99,
+  SIM_RESOLUTION: 128,
+  DYE_RESOLUTION: 1024,
 }
+
+let aspect_ratio;
+let sim_width, sim_height;
+let dye_width, dye_height;
+
+function get_aspect_ratio() {
+  return gl.canvas.clientWidth / gl.canvas.clientHeight;
+}
+
+function get_size(target_size) {
+  if (aspect_ratio < 1) return { width: target_size, height: Math.round(target_size / aspect_ratio) };
+  else return { width: Math.round(target_size * aspect_ratio), height: target_size };
+}
+
+function setup_sizes() {
+  const w = gl.canvas.clientWidth;
+  const h = gl.canvas.clientHeight;
+
+  aspect_ratio = get_aspect_ratio();
+
+  if (gl.canvas.width === w && gl.canvas.height === h) return false; 
+ 
+  gl.canvas.width = w;
+  gl.canvas.height = h;
+
+  const sim_size = get_size(config.SIM_RESOLUTION);
+  const dye_size = get_size(config.DYE_RESOLUTION);
+
+  sim_width = sim_size.width;
+  sim_height = sim_size.height;
+  dye_width = dye_size.width;
+  dye_height = dye_size.height;
+
+  return true;
+}
+
+setup_sizes();
 
 /*
 
 GEOMETRY SETUP
 
 */
+
+let inner_vao = gl.createVertexArray();
+let full_vao = gl.createVertexArray();
+
+const POSITION_LOCATION = 0;
 
 function setup_geometry(vao, position_data, size, type, normalized, stride, offset) {
   gl.bindVertexArray(vao);
@@ -56,46 +76,38 @@ function setup_geometry(vao, position_data, size, type, normalized, stride, offs
   gl.vertexAttribPointer(POSITION_LOCATION, size, type, normalized, stride, offset);
 }
 
-setup_geometry(
-  inner_vao,
-  new Float32Array([
-    -1 + sim_dx, -1 + sim_dy,
-    1 - sim_dx, 1 - sim_dy,
-    1 - sim_dx, -1 + sim_dy,
-    -1 + sim_dx, -1 + sim_dy,
-    -1 + sim_dx, 1 - sim_dy,
-    1 - sim_dx, 1 - sim_dy,
-  ]),
-  2, gl.FLOAT, false, 0, 0
-);
+function setup_vaos() {
+  const sim_dx = 1 / sim_width;
+  const sim_dy = 1 / sim_height;
 
-setup_geometry(
-  boundary_vao,
-  new Float32Array([
-    -1, -1 + sim_dy,
-    1, -1 + sim_dy,
-    1, -1,
-    1, 1,
-    1, 1,
-    -1, 1,
-    -1 + sim_dx, 1,
-    -1 + sim_dx, -1,
-  ]),
-  2, gl.FLOAT, false, 0, 0
-);
+  setup_geometry(
+    inner_vao,
+    new Float32Array([
+      -1 + sim_dx, -1 + sim_dy,
+      1 - sim_dx, 1 - sim_dy,
+      1 - sim_dx, -1 + sim_dy,
+      -1 + sim_dx, -1 + sim_dy,
+      -1 + sim_dx, 1 - sim_dy,
+      1 - sim_dx, 1 - sim_dy,
+    ]),
+    2, gl.FLOAT, false, 0, 0
+  );
 
-setup_geometry(
-  full_vao,
-  new Float32Array([
-    -1, -1,
-    1, 1,
-    1, -1,
-    -1, -1,
-    -1, 1,
-    1, 1,
-  ]),
-  2, gl.FLOAT, false, 0, 0
-);
+  setup_geometry(
+    full_vao,
+    new Float32Array([
+      -1, -1,
+      1, 1,
+      1, -1,
+      -1, -1,
+      -1, 1,
+      1, 1,
+    ]),
+    2, gl.FLOAT, false, 0, 0
+  );
+}
+
+setup_vaos();
 
 /*
 
@@ -142,8 +154,9 @@ vec4 bilerp(sampler2D tex, vec2 x_norm, vec2 size) {
 void main() {
   vec2 size_v = vec2(textureSize(u_v, 0));
   vec2 size_x = vec2(textureSize(u_x, 0));
+  vec2 aspect_ratio = vec2(size_x.x / size_x.y, 1.0);
   vec2 normalized_pos = floor(gl_FragCoord.xy) / size_x;
-  vec2 prev = normalized_pos - u_dt * bilerp(u_v, normalized_pos, size_v).xy;
+  vec2 prev = normalized_pos - u_dt * bilerp(u_v, normalized_pos, size_v).xy / aspect_ratio; 
   res = u_dissipation * bilerp(u_x, prev, size_x);
 }`
 
@@ -313,14 +326,15 @@ uniform sampler2D u_x;
 uniform vec2 u_point;
 uniform vec3 u_value;
 uniform float u_radius;
+uniform float u_ratio;
 
 out vec4 res;
 
 void main() {
-  ivec2 pos = ivec2(gl_FragCoord.xy);
-  float dist = distance(u_point, v_position);
-  vec3 force = exp( -dist * dist / u_radius) * u_value;
-  vec4 init = texelFetch(u_x, pos, 0);
+  vec4 init = texture(u_x, v_position);
+  vec2 v = v_position - u_point;
+  v.x *= u_ratio;
+  vec3 force = exp(-dot(v,v)/u_radius) * u_value;
 
   res = vec4(init.xyz + force, 1.);
 }`;
@@ -403,6 +417,8 @@ function create_fbo(w, h, internal_format, format, type, filter) {
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 
   return {
+    width: w,
+    height: h,
     tex: texture,
     fb: fb,
     bind: () => {
@@ -424,11 +440,32 @@ function create_fbo_pair(w, h, internal_format, format, type, filter) {
   };
 }
 
-const velocity = create_fbo_pair(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
-const pressure = create_fbo_pair(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
-const dye = create_fbo_pair(256, 256, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
-const tmp_1f = create_fbo(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
-const tmp_2f = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
+function resize_fbo(src, w, h, internal_format, format, type, filter) {
+  const new_fbo = create_fbo(w, h, internal_format, format, type, filter);
+
+  gl.useProgram(display_program.program);
+
+  gl.uniform1i(display_program.uniforms.u_x, 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, src.tex);
+
+  render(new_fbo, full_vao, gl.TRIANGLES, 6);
+
+  return new_fbo;
+}
+
+function resize_fbo_pair(src, w, h, internal_format, format, type, filter) {
+  const new_fbo = create_fbo_pair(w, h, internal_format, format, type, filter);
+  new_fbo.read = resize_fbo(src.read, w, h, internal_format, format, type, filter);
+  new_fbo.write = resize_fbo(src.write, w, h, internal_format, format, type, filter);
+  return new_fbo;
+}  
+
+let velocity = create_fbo_pair(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
+let pressure = create_fbo_pair(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+let tmp_1f = create_fbo(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+let tmp_2f = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
+let dye = create_fbo_pair(dye_width, dye_height, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
 
 const screen = {
   tex: null,
@@ -437,6 +474,14 @@ const screen = {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
   }
+}
+
+function setup_fbos() {
+  velocity = resize_fbo_pair(velocity, sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
+  pressure = resize_fbo_pair(pressure, sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+  dye = resize_fbo_pair(dye, dye_width, dye_height, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
+  tmp_1f = create_fbo(sim_width, sim_height, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+  tmp_2f = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 }
 
 /*
@@ -464,7 +509,7 @@ function render_screen(fbo) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, fbo.tex);
 
-  render(screen, full_vao, gl.TRIANGLES, 6, true);
+  render(screen, full_vao, gl.TRIANGLES, 6);
 }
 
 function set_boundary(fbo_pair, alpha) {
@@ -499,7 +544,6 @@ function step_sim(dt) {
   velocity.swap();
 
   set_boundary(dye, 0.);
-
   // Advect dye 
   gl.useProgram(advection_program.program);
 
@@ -516,6 +560,7 @@ function step_sim(dt) {
 
   render(dye.write, inner_vao, gl.TRIANGLES, 6);
   dye.swap();
+  set_boundary(dye, 0.);
 
   set_boundary(velocity, -1.0);
   // Diffuse velocity
@@ -556,7 +601,7 @@ function step_sim(dt) {
   pressure.swap();
   
   // Solve for pressure
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 40; i++) {
     set_boundary(pressure, 1.);
 
     // Jacobi iteration
@@ -606,7 +651,11 @@ let last_time = 0;
 function loop(t) {
   let dt = (t - last_time) / 1000.;
   last_time = t;
-  
+ 
+  if (setup_sizes()) {
+    setup_vaos();
+    setup_fbos();
+  }
   step_user();
   step_sim(dt);
   render_screen(
@@ -628,19 +677,26 @@ USER INPUTS
 
 const pointers = [];
 
-function serialize_pointer(pointer) {
+function create_pointer(pointer) {
   return {
     id: pointer.pointerId,
-    x: pointer.offsetX / gl.canvas.width,
-    y: 1. - pointer.offsetY / gl.canvas.height,
+    x: pointer.offsetX / gl.canvas.clientWidth,
+    y: 1. - pointer.offsetY / gl.canvas.clientHeight,
     dx: 0,
     dy: 0,
     color: [Math.random(), Math.random(), Math.random()]
   };
 }
 
+function update_pointer(old_ptr, new_ptr) {
+  new_ptr.color = old_ptr.color;
+  new_ptr.dx = new_ptr.x - old_ptr.x;
+  new_ptr.dy = new_ptr.y - old_ptr.y;
+  return new_ptr;
+}
+
 canvas.addEventListener('pointerdown', (e) => {
-  pointers.push(serialize_pointer(e));
+  pointers.push(create_pointer(e));
 });
 
 canvas.addEventListener('pointerup', (e) => {
@@ -654,14 +710,11 @@ canvas.addEventListener('pointermove', (e) => {
   const pointer_idx = pointers.findIndex(p => p.id === e.pointerId);
   if (pointer_idx < 0) return;
 
-  const new_pointer = serialize_pointer(e);
-  pointers[pointer_idx].dx = new_pointer.x - pointers[pointer_idx].x;
-  pointers[pointer_idx].dy = new_pointer.y - pointers[pointer_idx].y;
-  pointers[pointer_idx].x = new_pointer.x;
-  pointers[pointer_idx].y = new_pointer.y;
+  const new_pointer = create_pointer(e);
+  pointers[pointer_idx] = update_pointer(pointers[pointer_idx], new_pointer);
 });
 
-canvas.addEventListener('pointercancel', (e) => { 
+canvas.addEventListener('pointerout', (e) => { 
   const pointer_idx = pointers.findIndex(p => p.id === e.pointerId);
   if (pointer_idx < 0) return; 
   
@@ -676,10 +729,10 @@ function step_user() {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
 
-    gl.uniform2f(splat_program.uniforms.u_point, p.x, p.y);
-    gl.uniform3f(splat_program.uniforms.u_value, 10* p.dx, 10*p.dy, 0);
+    gl.uniform2fv(splat_program.uniforms.u_point, [p.x, p.y]);
+    gl.uniform3fv(splat_program.uniforms.u_value, [p.dx * aspect_ratio, p.dy, 0].map(c => c * 20.));
     gl.uniform1f(splat_program.uniforms.u_radius, config.RADIUS);
-
+    gl.uniform1f(splat_program.uniforms.u_ratio, aspect_ratio);
     render(velocity.write, inner_vao, gl.TRIANGLES, 6);
     velocity.swap();
 
@@ -694,14 +747,11 @@ function step_user() {
   });
 }
 
-
-
 /*
 
 UI
 
 */
-
 
 const pressure_slider = document.querySelector('#pressure');
 const radius_slider = document.querySelector('#radius');
@@ -714,16 +764,17 @@ function log_scale(value, a, b) {
   return a * Math.pow(b/a, value);
 }
 
-const velocity_dissipation_transform = value => 1. - log_scale(value, 0.0001, 0.1);
-const density_dissipation_transform = value => 1. - log_scale(value, 0.0001, 0.1);
+const radius_transform = value => log_scale(value, 0.0001, 0.01);
+const velocity_dissipation_transform = value => 1. - log_scale(value, 0.01, 0.1);
+const density_dissipation_transform = value => 1. - log_scale(value, 0.01, 0.1);
 
 config.PRESSURE = pressure_slider.value;
-config.RADIUS = radius_slider.value;
+config.RADIUS = radius_transform(radius_slider.value);
 config.VELOCITY_DISSIPATION = velocity_dissipation_transform(velocity_dissipation_slider.value);
 config.DYE_DISSIPATION = density_dissipation_transform(density_dissipation_slider.value);
 
 pressure_slider.addEventListener('input', e => {config.PRESSURE = e.target.value;});
-radius_slider.addEventListener('input', (e) => {config.RADIUS = e.target.value;});
+radius_slider.addEventListener('input', (e) => {config.RADIUS = radius_transform(e.target.value);});
 velocity_dissipation_slider.addEventListener('input', e => {config.VELOCITY_DISSIPATION = velocity_dissipation_transform(e.target.value);});
 density_dissipation_slider.addEventListener('input', e => {config.DYE_DISSIPATION = density_dissipation_transform(e.target.value);});
 display_radio.addEventListener('input', (e) => {config.DISPLAY = e.target.value;});

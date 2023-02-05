@@ -5,24 +5,49 @@
     <meta http-equiv="x-ua-compatible" content="ie=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>webgl2 fluid simulation</title>
+
+    <style>
+      body {
+        position: fixed;
+        inset: 0;
+        margin: 0;
+      }
+      #fluidsim_canvas {
+        width: 100%;
+        height: 100%;
+      }
+      #param_form {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        font-size: small;
+        bottom: 0;
+        right: 0;
+        padding: 1em;
+        background-color: rgba(0, 0, 0, 0.5);
+        color: white;
+      }
+    </style>
+
   </head>
   <body>
-    <form style="display: flex; flex-direction: column;" id="param_form">
+    <form id="param_form">
       <div>
         <label for="pressure">pressure</label>
-        <input type="range" min="0.0" max="1.0" step="0.001" value="0.5" class="slider" id="pressure">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.25" class="slider" id="pressure">
       </div>
       <div>
         <label for="radius">radius</label>
-        <input type="range" min="0.0005" max="0.005" step="0.0001" value="0.001" class="slider" id="radius">
+        <input type="range" min="0.0" max="1.0" step="0.01" value="0.5" class="slider" id="radius">
       </div>
       <div>
         <label for="velocity_dissipation">velocity dissipation</label>
-        <input type="range" min="0.0" max="1.0" step="0.001" value="0.0" class="slider" id="velocity_dissipation">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.1" class="slider" id="velocity_dissipation">
       </div>
       <div>
         <label for="density_dissipation">density dissipation</label>
-        <input type="range" min="0.0" max="1.0" step="0.001" value="0.0" class="slider" id="density_dissipation">
+        <input type="range" min="0.0" max="1.0" step="0.001" value="0.1" class="slider" id="density_dissipation">
       </div>
       <fieldset style="border: 0; display: flex;" id="display_radio">
         <div>
@@ -36,12 +61,12 @@
         </div>
     
         <div>
-          <input type="radio" id="pressure" name="display" value="pressure">
-          <label for="pressure">pressure</label>
+          <input type="radio" id="display_pressure" name="display" value="pressure">
+          <label for="display_pressure">pressure</label>
         </div>
       </fieldset>
     </form>
-    <canvas id="fluidsim_canvas" width="1024" height="1024" style="background-color: black;" ></canvas>
+    <canvas id="fluidsim_canvas" style="background-color: black;" ></canvas>
     <script src="script.js"></script>
   </body>
 </html>
