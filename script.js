@@ -161,83 +161,40 @@ void main() {
   res = u_dissipation * bilerp(u_x, prev, size_x);
 }`
 
-const add_fs = `#version 300 es
+const jacobi_fs = `#version 300 es
 precision highp float;
 
-uniform sampler2D u_u;
-uniform sampler2D u_v;
+uniform sampler2D u_x;
+uniform sampler2D u_b;
 uniform float u_alpha;
+uniform float u_beta;
 out vec4 res;
+
+${utility_neightbors}
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy); 
-  res = texelFetch(u_u, pos, 0) + u_alpha * texelFetch(u_v, pos, 0);
+  Neighbors n = tex_neighbors(u_x, pos);
+  vec4 b = texelFetch(u_b, pos, 0);
+  res = (n.b + n.t + n.l + n.r + u_alpha * b) / u_beta;
 }`
 
-const clear_fs = `#version 300 es
+const subtract_grad_fs = `#version 300 es
 precision highp float;
 
-uniform sampler2D u_x;
-uniform float u_alpha;
-out vec4 res;
-
-void main() {
-  ivec2 pos = ivec2(gl_FragCoord.xy); 
-  res = u_alpha * texelFetch(u_x, pos, 0);
-}`;
-
-const jacobi_diffusion_fs = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_x;
-uniform float u_nu;
-uniform float u_dt;
+uniform sampler2D u_v;
+uniform sampler2D u_p;
 out vec4 res;
 
 ${utility_neightbors}
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy); 
-  Neighbors n = tex_neighbors(u_x, pos);
-  vec2 new_x = (u_nu * u_dt * (n.b.xy + n.t.xy + n.l.xy + n.r.xy) + n.c.xy) / (1. + 4. * u_nu * u_dt);
-  res = vec4(new_x, 0.0, 1.0);
-}
-`
+  Neighbors n = tex_neighbors(u_p, pos);
 
-const jacobi_projection_fs = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_x;
-uniform sampler2D u_div_v;
-out vec4 res;
-
-${utility_neightbors}
-
-void main() {
-  ivec2 pos = ivec2(gl_FragCoord.xy); 
-  Neighbors n = tex_neighbors(u_x, pos);
-  float div_v = texelFetch(u_div_v, pos, 0).x;
-  float new_x = (n.b.x + n.t.x + n.l.x + n.r.x - div_v) / 4.;
-  res = vec4(new_x, 0.0, 0.0, 1.0);
-}
-`
-
-const grad_fs = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_x;
-out vec4 res;
-
-${utility_neightbors}
-
-void main() {
-  ivec2 pos = ivec2(gl_FragCoord.xy); 
-  Neighbors n = tex_neighbors(u_x, pos);
-
-  float grad_x = (n.r.x - n.l.x) / 2.;
-  float grad_y = (n.t.x - n.b.x) / 2.;
-
-  res = vec4(grad_x, grad_y, 0, 1);
+  vec4 grad = vec4(n.r.x - n.l.x, n.t.x - n.b.x, 0, 0) / 2.;
+  vec4 init_v = texelFetch(u_v, pos, 0);
+  res = init_v - grad;
 }`
 
 const div_fs = `#version 300 es
@@ -284,10 +241,11 @@ precision highp float;
 
 in vec2 v_position;
 uniform sampler2D u_x;
+uniform float u_alpha;
 out vec4 res;
 
 void main() {
-  res = texture(u_x, v_position);
+  res = u_alpha * texture(u_x, v_position);
 }`;
 
 const splat_fs = `#version 300 es
@@ -357,15 +315,12 @@ function create_program(vs_source, fs_source) {
 }
 
 const advection_program = create_program(base_vs, advection_fs);
-const add_program = create_program(base_vs, add_fs);
-const jacobi_diffusion_program = create_program(base_vs, jacobi_diffusion_fs);
-const jacobi_projection_program = create_program(base_vs, jacobi_projection_fs);
-const grad_program = create_program(base_vs, grad_fs);
+const jacobi_program = create_program(base_vs, jacobi_fs);
+const subtract_grad_program = create_program(base_vs, subtract_grad_fs);
 const div_program = create_program(base_vs, div_fs);
 const boundary_program = create_program(base_vs, boundary_fs);
 const display_program = create_program(base_vs, display_fs);
 const splat_program = create_program(base_vs, splat_fs); 
-const clear_program = create_program(base_vs, clear_fs); 
 
 /*
 
@@ -471,6 +426,7 @@ function render(fbo, vao, geometry, count, clear = false) {
 function render_screen(fbo) {
   gl.useProgram(display_program.program);
   gl.uniform1i(display_program.uniforms.u_x, fbo.bind_tex(0));
+  gl.uniform1f(display_program.uniforms.u_alpha, 1.0);
   render(screen, full_vao, gl.TRIANGLES, 6);
 }
 
@@ -510,12 +466,14 @@ function step_sim(dt) {
 
   // Diffuse velocity
   set_boundary(velocity, -1.0);
-  gl.useProgram(jacobi_diffusion_program.program);
+  gl.useProgram(jacobi_program.program);
 
-  gl.uniform1f(jacobi_diffusion_program.uniforms.u_nu, config.NU);
-  gl.uniform1f(jacobi_diffusion_program.uniforms.u_dt, dt);
+  const factor = 1./ (config.NU * dt);
+  gl.uniform1f(jacobi_program.uniforms.u_alpha, factor);
+  gl.uniform1f(jacobi_program.uniforms.u_beta, factor + 4.0);
   for (let i = 0; i < 20; i++) {
-    gl.uniform1i(jacobi_diffusion_program.uniforms.u_x, velocity.read.bind_tex(0));
+    gl.uniform1i(jacobi_program.uniforms.u_x, velocity.read.bind_tex(0));
+    gl.uniform1i(jacobi_program.uniforms.u_b, velocity.read.bind_tex(0));
     render(velocity.write, inner_vao, gl.TRIANGLES, 6);
     velocity.swap();
   }
@@ -528,37 +486,32 @@ function step_sim(dt) {
   render(tmp_1f, inner_vao, gl.TRIANGLES, 6);
 
   // Clear pressure
-  gl.useProgram(clear_program.program);
-  gl.uniform1i(clear_program.uniforms.u_x, pressure.read.bind_tex(0));
-  gl.uniform1f(clear_program.uniforms.u_alpha, config.PRESSURE);
+  gl.useProgram(display_program.program);
+  gl.uniform1i(display_program.uniforms.u_x, pressure.read.bind_tex(0));
+  gl.uniform1f(display_program.uniforms.u_alpha, config.PRESSURE);
   render(pressure.write, full_vao, gl.TRIANGLES, 6);
   pressure.swap();
   
   // Solve for pressure
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 50; i++) {
     set_boundary(pressure, 1.);
 
     // Jacobi iteration
-    gl.useProgram(jacobi_projection_program.program);
-    gl.uniform1i(jacobi_projection_program.uniforms.u_div_v, tmp_1f.bind_tex(0));
-    gl.uniform1i(jacobi_projection_program.uniforms.u_x, pressure.read.bind_tex(1));
+    gl.useProgram(jacobi_program.program);
+    gl.uniform1i(jacobi_program.uniforms.u_b, tmp_1f.bind_tex(0));
+    gl.uniform1i(jacobi_program.uniforms.u_x, pressure.read.bind_tex(1));
+    gl.uniform1f(jacobi_program.uniforms.u_alpha, -1.0);
+    gl.uniform1f(jacobi_program.uniforms.u_beta, 4.0);
     render(pressure.write, inner_vao, gl.TRIANGLES, 6);
     pressure.swap();
   }
 
+  // Compute pressure gradient and subtract from velocity
   set_boundary(velocity, -1.);
   set_boundary(pressure, 1.);
-
-  // Compute pressure gradient
-  gl.useProgram(grad_program.program);
-  gl.uniform1i(grad_program.uniforms.u_x, pressure.read.bind_tex(0));
-  render(tmp_2f, inner_vao, gl.TRIANGLES, 6);
-
-  // Subtract pressure gradient from velocity
-  gl.useProgram(add_program.program);
-  gl.uniform1i(add_program.uniforms.u_u, velocity.read.bind_tex(0));
-  gl.uniform1i(add_program.uniforms.u_v, tmp_2f.bind_tex(1));
-  gl.uniform1f(add_program.uniforms.u_alpha, -1.);
+  gl.useProgram(subtract_grad_program.program);
+  gl.uniform1i(subtract_grad_program.uniforms.u_p, pressure.read.bind_tex(0));
+  gl.uniform1i(subtract_grad_program.uniforms.u_v, velocity.read.bind_tex(1));
   render(velocity.write, inner_vao, gl.TRIANGLES, 6);
   velocity.swap();
 }
