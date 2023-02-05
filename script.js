@@ -80,31 +80,18 @@ function setup_vaos() {
   const sim_dx = 1 / sim_width;
   const sim_dy = 1 / sim_height;
 
-  setup_geometry(
-    inner_vao,
-    new Float32Array([
-      -1 + sim_dx, -1 + sim_dy,
-      1 - sim_dx, 1 - sim_dy,
-      1 - sim_dx, -1 + sim_dy,
-      -1 + sim_dx, -1 + sim_dy,
-      -1 + sim_dx, 1 - sim_dy,
-      1 - sim_dx, 1 - sim_dy,
-    ]),
-    2, gl.FLOAT, false, 0, 0
-  );
+  const inner_pos = new Float32Array([
+    -1 + sim_dx, -1 + sim_dy,
+    1 - sim_dx, 1 - sim_dy,
+    1 - sim_dx, -1 + sim_dy,
+    -1 + sim_dx, -1 + sim_dy,
+    -1 + sim_dx, 1 - sim_dy,
+    1 - sim_dx, 1 - sim_dy,
+  ]);
+  setup_geometry(inner_vao, inner_pos, 2, gl.FLOAT, false, 0, 0);
 
-  setup_geometry(
-    full_vao,
-    new Float32Array([
-      -1, -1,
-      1, 1,
-      1, -1,
-      -1, -1,
-      -1, 1,
-      1, 1,
-    ]),
-    2, gl.FLOAT, false, 0, 0
-  );
+  const full_pos = new Float32Array([-1, -1, 1, 1, 1, -1, -1, -1, -1, 1, 1, 1,]);
+  setup_geometry(full_vao, full_pos, 2, gl.FLOAT, false, 0, 0);
 }
 
 setup_vaos();
