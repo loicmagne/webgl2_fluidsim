@@ -115,11 +115,26 @@ SHADERS SETUP
 
 */
 
-const utility_shader = `#version 300 es` 
+const utility_neightbors = `
+struct Neighbors {
+  vec4 l;
+  vec4 r;
+  vec4 t;
+  vec4 b;
+  vec4 c;
+};
+
+Neighbors tex_neighbors(sampler2D tex, ivec2 pos) {
+  vec4 b = texelFetch(tex, pos - ivec2(0, 1), 0);
+  vec4 t = texelFetch(tex, pos + ivec2(0, 1), 0);
+  vec4 l = texelFetch(tex, pos - ivec2(1, 0), 0);
+  vec4 r = texelFetch(tex, pos + ivec2(1, 0), 0);
+  vec4 c = texelFetch(tex, pos, 0);
+  return Neighbors(l, r, t, b, c);
+}` 
 
 const base_vs = `#version 300 es
 in vec2 a_position;
-
 out vec2 v_position;
 
 void main() {
@@ -131,7 +146,6 @@ const advection_fs = `#version 300 es
 precision highp float;
 
 in vec2 v_position;
-
 uniform sampler2D u_v;
 uniform sampler2D u_x;
 uniform float u_dt;
@@ -166,7 +180,6 @@ precision highp float;
 uniform sampler2D u_u;
 uniform sampler2D u_v;
 uniform float u_alpha;
-
 out vec4 res;
 
 void main() {
@@ -179,7 +192,6 @@ precision highp float;
 
 uniform sampler2D u_x;
 uniform float u_alpha;
-
 out vec4 res;
 
 void main() {
@@ -193,18 +205,14 @@ precision highp float;
 uniform sampler2D u_x;
 uniform float u_nu;
 uniform float u_dt;
-
 out vec4 res;
+
+${utility_neightbors}
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy); 
-  vec2 v_b = texelFetch(u_x, pos - ivec2(0, 1), 0).xy;
-  vec2 v_t = texelFetch(u_x, pos + ivec2(0, 1), 0).xy;
-  vec2 v_l = texelFetch(u_x, pos - ivec2(1, 0), 0).xy;
-  vec2 v_r = texelFetch(u_x, pos + ivec2(1, 0), 0).xy;
-  vec2 v_c = texelFetch(u_x, pos, 0).xy;
-
-  vec2 new_x = (u_nu * u_dt * (v_b + v_t + v_l + v_r) + v_c) / (1. + 4. * u_nu * u_dt);
+  Neighbors n = tex_neighbors(u_x, pos);
+  vec2 new_x = (u_nu * u_dt * (n.b.xy + n.t.xy + n.l.xy + n.r.xy) + n.c.xy) / (1. + 4. * u_nu * u_dt);
   res = vec4(new_x, 0.0, 1.0);
 }
 `
@@ -214,18 +222,15 @@ precision highp float;
 
 uniform sampler2D u_x;
 uniform sampler2D u_div_v;
-
 out vec4 res;
+
+${utility_neightbors}
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy); 
-  float v_b = texelFetch(u_x, pos - ivec2(0, 1), 0).x;
-  float v_t = texelFetch(u_x, pos + ivec2(0, 1), 0).x;
-  float v_l = texelFetch(u_x, pos - ivec2(1, 0), 0).x;
-  float v_r = texelFetch(u_x, pos + ivec2(1, 0), 0).x;
+  Neighbors n = tex_neighbors(u_x, pos);
   float div_v = texelFetch(u_div_v, pos, 0).x;
-
-  float new_x = (v_b + v_t + v_l + v_r - div_v) / 4.;
+  float new_x = (n.b.x + n.t.x + n.l.x + n.r.x - div_v) / 4.;
   res = vec4(new_x, 0.0, 0.0, 1.0);
 }
 `
@@ -234,18 +239,16 @@ const grad_fs = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_x;
-
 out vec4 res;
+
+${utility_neightbors}
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy); 
-  vec4 v_b = texelFetch(u_x, pos - ivec2(0, 1), 0);
-  vec4 v_t = texelFetch(u_x, pos + ivec2(0, 1), 0);
-  vec4 v_l = texelFetch(u_x, pos - ivec2(1, 0), 0);
-  vec4 v_r = texelFetch(u_x, pos + ivec2(1, 0), 0);
+  Neighbors n = tex_neighbors(u_x, pos);
 
-  float grad_x = (v_r.x - v_l.x) / 2.;
-  float grad_y = (v_t.x - v_b.x) / 2.;
+  float grad_x = (n.r.x - n.l.x) / 2.;
+  float grad_y = (n.t.x - n.b.x) / 2.;
 
   res = vec4(grad_x, grad_y, 0, 1);
 }`
@@ -254,17 +257,15 @@ const div_fs = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_x;
-
 out vec4 res;
+
+${utility_neightbors}
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy); 
-  vec4 v_b = texelFetch(u_x, pos - ivec2(0, 1), 0);
-  vec4 v_t = texelFetch(u_x, pos + ivec2(0, 1), 0);
-  vec4 v_l = texelFetch(u_x, pos - ivec2(1, 0), 0);
-  vec4 v_r = texelFetch(u_x, pos + ivec2(1, 0), 0);
+  Neighbors n = tex_neighbors(u_x, pos);
 
-  float div = (v_r.x - v_l.x + v_t.y - v_b.y) / 2.;
+  float div = (n.r.x - n.l.x + n.t.y - n.b.y) / 2.;
 
   res = vec4(div, 0, 0, 1);
 }`
@@ -273,33 +274,20 @@ const boundary_fs = `#version 300 es
 precision highp float;
 
 in vec2 v_position;
-
 uniform sampler2D u_x;
 uniform float u_alpha;
-
 out vec4 res;
 
 void main() {
   ivec2 pos = ivec2(gl_FragCoord.xy);
   ivec2 size = textureSize(u_x, 0);
-  float coef = 1.;
-  ivec2 direction = ivec2(0, 0);
-
-  if (pos.x == 0) {
-    coef = u_alpha;
-    direction.x = 1;
-  } else if (pos.x == size.x - 1) {
-    coef = u_alpha;
-    direction.x = -1;
-  }
-
-  if (pos.y == 0) {
-    coef = u_alpha;
-    direction.y = 1;
-  } else if (pos.y == size.y - 1) {
-    coef = u_alpha;
-    direction.y = -1;
-  }
+  int border_l = 1 - min(pos.x, 1);
+  int border_r = 1 - min(size.x - 1 - pos.x, 1);
+  int border_b = 1 - min(pos.y, 1);
+  int border_t = 1 - min(size.y - 1 - pos.y, 1);
+  int border = min(border_l + border_r + border_b + border_t, 1);
+  float coef = (border > 0) ? u_alpha : 1.0; 
+  ivec2 direction = ivec2(border_l - border_r, border_b - border_t); 
  
   res = coef  * texelFetch(u_x, pos + direction, 0);
 }`;
@@ -308,9 +296,7 @@ const display_fs = `#version 300 es
 precision highp float;
 
 in vec2 v_position;
-
 uniform sampler2D u_x;
-
 out vec4 res;
 
 void main() {
@@ -321,13 +307,11 @@ const splat_fs = `#version 300 es
 precision highp float;
 
 in vec2 v_position;
-
 uniform sampler2D u_x;
 uniform vec2 u_point;
 uniform vec3 u_value;
 uniform float u_radius;
 uniform float u_ratio;
-
 out vec4 res;
 
 void main() {
@@ -403,8 +387,8 @@ TARGET TEXTURES / FRAMEBUFFERS SETUP
 */
 
 function create_fbo(w, h, internal_format, format, type, filter) {
-  gl.activeTexture(gl.TEXTURE0);
   const texture = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
@@ -417,14 +401,17 @@ function create_fbo(w, h, internal_format, format, type, filter) {
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
 
   return {
-    width: w,
-    height: h,
     tex: texture,
     fb: fb,
     bind: () => {
       gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
       gl.viewport(0, 0, w, h);
-    }
+    },
+    bind_tex: (i) => {
+      gl.activeTexture(gl.TEXTURE0+i);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      return i;
+    },
   };
 }
 
@@ -442,15 +429,9 @@ function create_fbo_pair(w, h, internal_format, format, type, filter) {
 
 function resize_fbo(src, w, h, internal_format, format, type, filter) {
   const new_fbo = create_fbo(w, h, internal_format, format, type, filter);
-
   gl.useProgram(display_program.program);
-
-  gl.uniform1i(display_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, src.tex);
-
+  gl.uniform1i(display_program.uniforms.u_x, src.bind_tex(0));
   render(new_fbo, full_vao, gl.TRIANGLES, 6);
-
   return new_fbo;
 }
 
@@ -501,102 +482,68 @@ function render(fbo, vao, geometry, count, clear = false) {
 }
 
 function render_screen(fbo) {
-  // debug
-
   gl.useProgram(display_program.program);
-
-  gl.uniform1i(display_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, fbo.tex);
-
+  gl.uniform1i(display_program.uniforms.u_x, fbo.bind_tex(0));
   render(screen, full_vao, gl.TRIANGLES, 6);
 }
 
 function set_boundary(fbo_pair, alpha) {
   gl.useProgram(boundary_program.program);
-
-  gl.uniform1i(boundary_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, fbo_pair.read.tex);
-
+  gl.uniform1i(boundary_program.uniforms.u_x, fbo_pair.read.bind_tex(0));
   gl.uniform1f(boundary_program.uniforms.u_alpha, alpha);
-
   render(fbo_pair.write, full_vao, gl.TRIANGLES, 6);
   fbo_pair.swap();
 }
 
 function step_sim(dt) {
 
-  set_boundary(velocity, -1.0);
-
   // Advect velocity
+  set_boundary(velocity, -1.0);
   gl.useProgram(advection_program.program);
 
   gl.uniform1i(advection_program.uniforms.u_v, 0);
-  gl.uniform1i(advection_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-
+  gl.uniform1i(advection_program.uniforms.u_x, velocity.read.bind_tex(0));
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
   gl.uniform1f(advection_program.uniforms.u_dissipation, config.VELOCITY_DISSIPATION);
 
   render(velocity.write, inner_vao, gl.TRIANGLES, 6);
   velocity.swap();
 
-  set_boundary(dye, 0.);
   // Advect dye 
+  set_boundary(dye, 0.);
   gl.useProgram(advection_program.program);
 
-  gl.uniform1i(advection_program.uniforms.u_v, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-
-  gl.uniform1i(advection_program.uniforms.u_x, 1);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
-
+  gl.uniform1i(advection_program.uniforms.u_v, velocity.read.bind_tex(0));
+  gl.uniform1i(advection_program.uniforms.u_x, dye.read.bind_tex(1));
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
   gl.uniform1f(advection_program.uniforms.u_dissipation, config.DYE_DISSIPATION);
 
   render(dye.write, inner_vao, gl.TRIANGLES, 6);
   dye.swap();
-  set_boundary(dye, 0.);
 
-  set_boundary(velocity, -1.0);
   // Diffuse velocity
+  set_boundary(velocity, -1.0);
   gl.useProgram(jacobi_diffusion_program.program);
 
   gl.uniform1f(jacobi_diffusion_program.uniforms.u_nu, config.NU);
   gl.uniform1f(jacobi_diffusion_program.uniforms.u_dt, dt);
-
   for (let i = 0; i < 20; i++) {
-    gl.uniform1i(jacobi_diffusion_program.uniforms.u_x, 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
+    gl.uniform1i(jacobi_diffusion_program.uniforms.u_x, velocity.read.bind_tex(0));
     render(velocity.write, inner_vao, gl.TRIANGLES, 6);
     velocity.swap();
   }
 
   // Project velocity
-  set_boundary(velocity, -1);
   // Compute divergence
+  set_boundary(velocity, -1);
   gl.useProgram(div_program.program);
-
-  gl.uniform1i(div_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-
+  gl.uniform1i(div_program.uniforms.u_x, velocity.read.bind_tex(0));
   render(tmp_1f, inner_vao, gl.TRIANGLES, 6);
 
   // Clear pressure
   gl.useProgram(clear_program.program);
-
-  gl.uniform1i(clear_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
-
+  gl.uniform1i(clear_program.uniforms.u_x, pressure.read.bind_tex(0));
   gl.uniform1f(clear_program.uniforms.u_alpha, config.PRESSURE);
-
   render(pressure.write, full_vao, gl.TRIANGLES, 6);
   pressure.swap();
   
@@ -606,14 +553,8 @@ function step_sim(dt) {
 
     // Jacobi iteration
     gl.useProgram(jacobi_projection_program.program);
-
-    gl.uniform1i(jacobi_projection_program.uniforms.u_div_v, 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tmp_1f.tex);
-    
-    gl.uniform1i(jacobi_projection_program.uniforms.u_x, 1);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
+    gl.uniform1i(jacobi_projection_program.uniforms.u_div_v, tmp_1f.bind_tex(0));
+    gl.uniform1i(jacobi_projection_program.uniforms.u_x, pressure.read.bind_tex(1));
     render(pressure.write, inner_vao, gl.TRIANGLES, 6);
     pressure.swap();
   }
@@ -623,26 +564,14 @@ function step_sim(dt) {
 
   // Compute pressure gradient
   gl.useProgram(grad_program.program);
-
-  gl.uniform1i(grad_program.uniforms.u_x, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, pressure.read.tex);
-
+  gl.uniform1i(grad_program.uniforms.u_x, pressure.read.bind_tex(0));
   render(tmp_2f, inner_vao, gl.TRIANGLES, 6);
 
   // Subtract pressure gradient from velocity
   gl.useProgram(add_program.program);
-
-  gl.uniform1i(add_program.uniforms.u_u, 0);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-
-  gl.uniform1i(add_program.uniforms.u_v, 1);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, tmp_2f.tex);
-
+  gl.uniform1i(add_program.uniforms.u_u, velocity.read.bind_tex(0));
+  gl.uniform1i(add_program.uniforms.u_v, tmp_2f.bind_tex(1));
   gl.uniform1f(add_program.uniforms.u_alpha, -1.);
-
   render(velocity.write, inner_vao, gl.TRIANGLES, 6);
   velocity.swap();
 }
@@ -724,11 +653,7 @@ canvas.addEventListener('pointerout', (e) => {
 function step_user() {
   pointers.forEach(p => {
     gl.useProgram(splat_program.program);
-  
-    gl.uniform1i(splat_program.uniforms.u_x, 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, velocity.read.tex);
-
+    gl.uniform1i(splat_program.uniforms.u_x, velocity.read.bind_tex(0));
     gl.uniform2fv(splat_program.uniforms.u_point, [p.x, p.y]);
     gl.uniform3fv(splat_program.uniforms.u_value, [p.dx * aspect_ratio, p.dy, 0].map(c => c * 20.));
     gl.uniform1f(splat_program.uniforms.u_radius, config.RADIUS);
@@ -736,12 +661,8 @@ function step_user() {
     render(velocity.write, inner_vao, gl.TRIANGLES, 6);
     velocity.swap();
 
-    gl.uniform1i(splat_program.uniforms.u_x, 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, dye.read.tex);
-
+    gl.uniform1i(splat_program.uniforms.u_x, dye.read.bind_tex(0));
     gl.uniform3fv(splat_program.uniforms.u_value, p.color.map(c => c * 0.2));
-
     render(dye.write, inner_vao, gl.TRIANGLES, 6);
     dye.swap();
   });

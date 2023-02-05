@@ -28,6 +28,16 @@
         background-color: rgba(0, 0, 0, 0.5);
         color: white;
       }
+      #param_form > div {
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
+      }
+      #display_radio {
+        border: 0;
+        display: flex;
+        gap: 1em;
+      }
     </style>
 
   </head>
@@ -49,7 +59,7 @@
         <label for="density_dissipation">density dissipation</label>
         <input type="range" min="0.0" max="1.0" step="0.001" value="0.1" class="slider" id="density_dissipation">
       </div>
-      <fieldset style="border: 0; display: flex;" id="display_radio">
+      <fieldset id="display_radio">
         <div>
           <input type="radio" id="dye" name="display" value="dye" checked>
           <label for="dye">dye</label>
