@@ -5,7 +5,7 @@ const canvas = document.querySelector('#fluidsim_canvas');
 /** @type {WebGL2RenderingContext} */
 const gl = canvas.getContext('webgl2');
 
-const ext = gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('EXT_color_buffer_float');
 
 let config = {
   NU: 1.,
