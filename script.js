@@ -58,7 +58,6 @@ setup_sizes();
 
 /* GEOMETRY SETUP */
 
-let inner_vao = gl.createVertexArray();
 let full_vao = gl.createVertexArray();
 
 const POSITION_LOCATION = 0;
@@ -73,25 +72,8 @@ function setup_geometry(vao, position_data, size, type, normalized, stride, offs
   gl.vertexAttribPointer(POSITION_LOCATION, size, type, normalized, stride, offset);
 }
 
-function setup_vaos() {
-  const sim_dx = 1 / sim_width;
-  const sim_dy = 1 / sim_height;
-
-  const inner_pos = new Float32Array([
-    -1 + sim_dx, -1 + sim_dy,
-    1 - sim_dx, 1 - sim_dy,
-    1 - sim_dx, -1 + sim_dy,
-    -1 + sim_dx, -1 + sim_dy,
-    -1 + sim_dx, 1 - sim_dy,
-    1 - sim_dx, 1 - sim_dy,
-  ]);
-  setup_geometry(inner_vao, inner_pos, 2, gl.FLOAT, false, 0, 0);
-
-  const full_pos = new Float32Array([-1, -1, 1, 1, 1, -1, -1, -1, -1, 1, 1, 1,]);
-  setup_geometry(full_vao, full_pos, 2, gl.FLOAT, false, 0, 0);
-}
-
-setup_vaos();
+const full_pos = new Float32Array([-1, -1, 1, 1, 1, -1, -1, -1, -1, 1, 1, 1,]);
+setup_geometry(full_vao, full_pos, 2, gl.FLOAT, false, 0, 0);
 
 /* SHADERS SETUP */
 
@@ -356,7 +338,7 @@ function resize_fbo(src, w, h, internal_format, format, type, filter) {
   const new_fbo = create_fbo(w, h, internal_format, format, type, filter);
   gl.useProgram(display_program.program);
   gl.uniform1i(display_program.uniforms.u_x, src.bind_tex(0));
-  render(new_fbo, full_vao, gl.TRIANGLES, 6);
+  render(new_fbo, gl.TRIANGLES, 6);
   return new_fbo;
 }
 
@@ -392,8 +374,8 @@ function setup_fbos() {
 
 /* SIMULATION / RENDERING */
 
-function render(fbo, vao, geometry, count, clear = false) {
-  gl.bindVertexArray(vao);
+function render(fbo, geometry, count, clear = false) {
+  gl.bindVertexArray(full_vao);
   fbo.bind();
   if (clear) {
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
@@ -406,7 +388,7 @@ function render_screen(fbo) {
   gl.useProgram(display_program.program);
   gl.uniform1i(display_program.uniforms.u_x, fbo.bind_tex(0));
   gl.uniform1f(display_program.uniforms.u_alpha, 1.0);
-  render(screen, full_vao, gl.TRIANGLES, 6);
+  render(screen, gl.TRIANGLES, 6);
 }
 
 function set_boundary(fbo_pair, alpha) {
@@ -414,7 +396,7 @@ function set_boundary(fbo_pair, alpha) {
   gl.uniform2f(boundary_program.uniforms.u_res, 1. / sim_width, 1. / sim_height)
   gl.uniform1i(boundary_program.uniforms.u_x, fbo_pair.read.bind_tex(0));
   gl.uniform1f(boundary_program.uniforms.u_alpha, alpha);
-  render(fbo_pair.write, full_vao, gl.TRIANGLES, 6);
+  render(fbo_pair.write, gl.TRIANGLES, 6);
   fbo_pair.swap();
 }
 
@@ -429,7 +411,7 @@ function step_sim(dt) {
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
   gl.uniform1f(advection_program.uniforms.u_dissipation, config.VELOCITY_DISSIPATION);
 
-  render(velocity.write, inner_vao, gl.TRIANGLES, 6);
+  render(velocity.write, gl.TRIANGLES, 6);
   velocity.swap();
 
   // Advect dye 
@@ -441,7 +423,7 @@ function step_sim(dt) {
   gl.uniform1f(advection_program.uniforms.u_dt, dt);
   gl.uniform1f(advection_program.uniforms.u_dissipation, config.DYE_DISSIPATION);
 
-  render(dye.write, inner_vao, gl.TRIANGLES, 6);
+  render(dye.write, gl.TRIANGLES, 6);
   dye.swap();
 
   // Diffuse velocity
@@ -454,7 +436,7 @@ function step_sim(dt) {
   for (let i = 0; i < 20; i++) {
     gl.uniform1i(jacobi_program.uniforms.u_x, velocity.read.bind_tex(0));
     gl.uniform1i(jacobi_program.uniforms.u_b, velocity.read.bind_tex(0));
-    render(velocity.write, inner_vao, gl.TRIANGLES, 6);
+    render(velocity.write, gl.TRIANGLES, 6);
     velocity.swap();
   }
 
@@ -463,13 +445,13 @@ function step_sim(dt) {
   set_boundary(velocity, -1);
   gl.useProgram(div_program.program);
   gl.uniform1i(div_program.uniforms.u_x, velocity.read.bind_tex(0));
-  render(tmp_1f, inner_vao, gl.TRIANGLES, 6);
+  render(tmp_1f, gl.TRIANGLES, 6);
 
   // Clear pressure
   gl.useProgram(display_program.program);
   gl.uniform1i(display_program.uniforms.u_x, pressure.read.bind_tex(0));
   gl.uniform1f(display_program.uniforms.u_alpha, config.PRESSURE);
-  render(pressure.write, full_vao, gl.TRIANGLES, 6);
+  render(pressure.write, gl.TRIANGLES, 6);
   pressure.swap();
   
   // Solve for pressure
@@ -482,7 +464,7 @@ function step_sim(dt) {
     gl.uniform1i(jacobi_program.uniforms.u_x, pressure.read.bind_tex(1));
     gl.uniform1f(jacobi_program.uniforms.u_alpha, -1.0);
     gl.uniform1f(jacobi_program.uniforms.u_beta, 4.0);
-    render(pressure.write, inner_vao, gl.TRIANGLES, 6);
+    render(pressure.write, gl.TRIANGLES, 6);
     pressure.swap();
   }
 
@@ -492,7 +474,7 @@ function step_sim(dt) {
   gl.useProgram(subtract_grad_program.program);
   gl.uniform1i(subtract_grad_program.uniforms.u_p, pressure.read.bind_tex(0));
   gl.uniform1i(subtract_grad_program.uniforms.u_v, velocity.read.bind_tex(1));
-  render(velocity.write, inner_vao, gl.TRIANGLES, 6);
+  render(velocity.write, gl.TRIANGLES, 6);
   velocity.swap();
 }
 
@@ -501,10 +483,7 @@ function loop(t) {
   let dt = (t - last_time) / 1000.;
   last_time = t;
  
-  if (setup_sizes()) {
-    setup_vaos();
-    setup_fbos();
-  }
+  if (setup_sizes()) setup_fbos(); 
   step_user();
   step_sim(dt);
   render_screen(
@@ -574,12 +553,12 @@ function step_user() {
     gl.uniform3fv(splat_program.uniforms.u_value, [p.dx * aspect_ratio, p.dy, 0].map(c => c * config.SPLAT_FORCE));
     gl.uniform1f(splat_program.uniforms.u_radius, config.RADIUS);
     gl.uniform1f(splat_program.uniforms.u_ratio, aspect_ratio);
-    render(velocity.write, inner_vao, gl.TRIANGLES, 6);
+    render(velocity.write, gl.TRIANGLES, 6);
     velocity.swap();
 
     gl.uniform1i(splat_program.uniforms.u_x, dye.read.bind_tex(0));
     gl.uniform3fv(splat_program.uniforms.u_value, p.color.map(c => c * 0.2));
-    render(dye.write, inner_vao, gl.TRIANGLES, 6);
+    render(dye.write, gl.TRIANGLES, 6);
     dye.swap();
   });
 }
