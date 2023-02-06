@@ -132,7 +132,6 @@ void main() {
 const advection_fs = `#version 300 es
 precision highp float;
 
-in vec2 v_position;
 uniform sampler2D u_v;
 uniform sampler2D u_x;
 uniform float u_dt;
@@ -140,7 +139,7 @@ uniform float u_dissipation;
 out vec4 res;
 
 vec4 bilerp(sampler2D tex, vec2 x_norm, vec2 size) {
-  vec2 x = x_norm * size;
+  vec2 x = x_norm * size - 0.5;
   vec2 fx = fract(x);
   ivec2 ix = ivec2(floor(x));
 
@@ -156,7 +155,7 @@ void main() {
   vec2 size_v = vec2(textureSize(u_v, 0));
   vec2 size_x = vec2(textureSize(u_x, 0));
   vec2 aspect_ratio = vec2(size_x.x / size_x.y, 1.0);
-  vec2 normalized_pos = floor(gl_FragCoord.xy) / size_x;
+  vec2 normalized_pos = gl_FragCoord.xy / size_x;
   vec2 prev = normalized_pos - u_dt * bilerp(u_v, normalized_pos, size_v).xy / aspect_ratio; 
   res = u_dissipation * bilerp(u_x, prev, size_x);
 }`
@@ -219,21 +218,16 @@ precision highp float;
 
 in vec2 v_position;
 uniform sampler2D u_x;
+uniform vec2 u_res;
 uniform float u_alpha;
 out vec4 res;
 
 void main() {
-  ivec2 pos = ivec2(gl_FragCoord.xy);
-  ivec2 size = textureSize(u_x, 0);
-  int l = 1 - min(pos.x, 1);
-  int r = 1 - min(size.x - 1 - pos.x, 1);
-  int b = 1 - min(pos.y, 1);
-  int t = 1 - min(size.y - 1 - pos.y, 1);
-  int border = min(l + r + b + t, 1);
-  float coef = (border > 0) ? u_alpha : 1.0; 
-  ivec2 dir = ivec2(l - r, b - t);
- 
-  res = coef  * texelFetch(u_x, pos + dir, 0);
+  vec2 dir = vec2(0, 0);
+  dir += vec2(lessThan(v_position, u_res));
+  dir -= vec2(greaterThan(v_position, vec2(1.0) - u_res));
+  float coef = length(dir) > 0.0 ? u_alpha : 1.0;
+  res = coef * texture(u_x, v_position + dir * u_res);
 }`;
 
 const display_fs = `#version 300 es
@@ -432,6 +426,7 @@ function render_screen(fbo) {
 
 function set_boundary(fbo_pair, alpha) {
   gl.useProgram(boundary_program.program);
+  gl.uniform2f(boundary_program.uniforms.u_res, 1. / sim_width, 1. / sim_height)
   gl.uniform1i(boundary_program.uniforms.u_x, fbo_pair.read.bind_tex(0));
   gl.uniform1f(boundary_program.uniforms.u_alpha, alpha);
   render(fbo_pair.write, full_vao, gl.TRIANGLES, 6);
