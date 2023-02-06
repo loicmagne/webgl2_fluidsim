@@ -1,4 +1,4 @@
-# 5kb webgl2 fluid simulation
+# [5kb webgl2 fluid simulation](https://loicmagne.github.io/webgl2_fluidsim/)
 
 Implementation of the [Stable Fluid](https://www.ljll.math.upmc.fr/~frey/cours/references/Stam%20J.,%20Stable%20fluids.pdf) algorithm, using webgl2 features (texelFetch, textureSize, vertex array objects) in about 500 lines of codes, and compressed to less than ~5kb of javascript.
 
