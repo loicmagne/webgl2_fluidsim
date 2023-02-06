@@ -16,6 +16,7 @@ let config = {
   DYE_DISSIPATION: 0.99,
   SIM_RESOLUTION: 128,
   DYE_RESOLUTION: 1024,
+  SPLAT_FORCE: 20.
 }
 
 let aspect_ratio;
@@ -55,11 +56,7 @@ function setup_sizes() {
 
 setup_sizes();
 
-/*
-
-GEOMETRY SETUP
-
-*/
+/* GEOMETRY SETUP */
 
 let inner_vao = gl.createVertexArray();
 let full_vao = gl.createVertexArray();
@@ -96,11 +93,7 @@ function setup_vaos() {
 
 setup_vaos();
 
-/*
-
-SHADERS SETUP
-
-*/
+/* SHADERS SETUP */
 
 const utility_neightbors = `
 struct Neighbors {
@@ -316,11 +309,7 @@ const boundary_program = create_program(base_vs, boundary_fs);
 const display_program = create_program(base_vs, display_fs);
 const splat_program = create_program(base_vs, splat_fs); 
 
-/*
-
-TARGET TEXTURES / FRAMEBUFFERS SETUP
-
-*/
+/* TARGET TEXTURES / FRAMEBUFFERS SETUP */
 
 function create_fbo(w, h, internal_format, format, type, filter) {
   const texture = gl.createTexture();
@@ -401,11 +390,7 @@ function setup_fbos() {
   tmp_2f = create_fbo(sim_width, sim_height, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST);
 }
 
-/*
-
-SIMULATION / RENDERING
-
-*/
+/* SIMULATION / RENDERING */
 
 function render(fbo, vao, geometry, count, clear = false) {
   gl.bindVertexArray(vao);
@@ -533,11 +518,7 @@ function loop(t) {
 
 requestAnimationFrame(loop);
 
-/*
-
-USER INPUTS
-
-*/
+/* USER INPUTS */
 
 const pointers = [];
 
@@ -590,7 +571,7 @@ function step_user() {
     gl.useProgram(splat_program.program);
     gl.uniform1i(splat_program.uniforms.u_x, velocity.read.bind_tex(0));
     gl.uniform2fv(splat_program.uniforms.u_point, [p.x, p.y]);
-    gl.uniform3fv(splat_program.uniforms.u_value, [p.dx * aspect_ratio, p.dy, 0].map(c => c * 20.));
+    gl.uniform3fv(splat_program.uniforms.u_value, [p.dx * aspect_ratio, p.dy, 0].map(c => c * config.SPLAT_FORCE));
     gl.uniform1f(splat_program.uniforms.u_radius, config.RADIUS);
     gl.uniform1f(splat_program.uniforms.u_ratio, aspect_ratio);
     render(velocity.write, inner_vao, gl.TRIANGLES, 6);
@@ -603,11 +584,7 @@ function step_user() {
   });
 }
 
-/*
-
-UI
-
-*/
+/* UI */
 
 const viscosity_slider = document.querySelector('#viscosity');
 const pressure_slider = document.querySelector('#pressure');
